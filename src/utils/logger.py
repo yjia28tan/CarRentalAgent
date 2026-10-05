@@ -53,10 +53,14 @@ def configure_logging(level: str = "INFO") -> None:
     root.handlers = [handler]
     root.setLevel(level.upper())
 
-    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    for name in ("uvicorn", "uvicorn.error"):
         lg = logging.getLogger(name)
         lg.handlers = []
         lg.propagate = True
+    # RequestContextMiddleware already logs every request as "http_request".
+    access = logging.getLogger("uvicorn.access")
+    access.handlers = []
+    access.propagate = False
     # httpx logs full URLs (incl. query strings) at INFO; keep it quiet.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
