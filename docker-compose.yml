@@ -1,0 +1,85 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: rental
+      POSTGRES_DB: rental
+    env_file: secrets.env  # provides POSTGRES_PASSWORD
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rental -d rental"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongodata:/data/db
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mock_services:
+    build: .
+    command: uvicorn src.mock_services.main:app --host 0.0.0.0 --port 8001 --no-access-log
+    env_file: secrets.env
+    volumes:
+      - hf_cache:/home/appuser/.cache/huggingface
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  app:
+    build: .
+    command: uvicorn app_main:app --host 0.0.0.0 --port 8000 --no-access-log
+    env_file: secrets.env
+    volumes:
+      - hf_cache:/home/appuser/.cache/huggingface
+    ports:
+      - "8000:8000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mock_services:
+        condition: service_started
+    restart: unless-stopped
+
+  ui:
+    build: .
+    command: streamlit run ui/streamlit_app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+    environment:
+      AGENT_API_URL: http://app:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  mongodata:
+  hf_cache:
