@@ -37,6 +37,8 @@ class RequestContextMiddleware:
                 break
         request_id = incoming if _VALID_REQUEST_ID.fullmatch(incoming) else new_id("req")
 
+        # Restored afterwards: an in-process nested app (dev server, tests) must not wipe the caller's context.
+        outer_context = structlog.contextvars.get_contextvars()
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
         scope.setdefault("state", {})["request_id"] = request_id
@@ -72,3 +74,4 @@ class RequestContextMiddleware:
                 latency_ms=round((time.perf_counter() - started) * 1000, 1),
             )
             structlog.contextvars.clear_contextvars()
+            structlog.contextvars.bind_contextvars(**outer_context)
