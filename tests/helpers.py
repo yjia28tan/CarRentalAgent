@@ -1,4 +1,5 @@
 import hashlib
+import json
 import re
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -27,6 +28,26 @@ def local(anchor: date, days: int, hour: int = 10) -> datetime:
 def naive(anchor: date, days: int, hour: int = 10) -> str:
     """Local ISO string without offset, the way the LLM is told to pass dates."""
     return local(anchor, days, hour).replace(tzinfo=None).isoformat(timespec="minutes")
+
+
+def month_day(anchor: date, days: int) -> str:
+    """Natural date without a year, e.g. 'October 10' (resolved to the next occurrence by the agent)."""
+    d = anchor + timedelta(days=days)
+    return f"{d:%B} {d.day}"
+
+
+def tool_results(messages: list[dict]) -> list[dict]:
+    return [json.loads(m["content"]) for m in messages if m["role"] == "tool"]
+
+
+def reply_from(compose):
+    """FakeLLM step whose final text is built from this turn's tool results, like a grounded model would."""
+    from src.llm.fake import say
+
+    def step(system, messages, tools):
+        return say(compose(tool_results(messages)))
+
+    return step
 
 
 class AgentHarness:

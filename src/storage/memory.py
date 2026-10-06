@@ -59,6 +59,11 @@ class InMemorySessionStore:
     async def set_json(self, key: str, value: Any, ttl_seconds: int) -> None:
         self.kv[key] = (dumps(value), time.monotonic() + ttl_seconds)
 
+    async def pop_json(self, key: str) -> Any | None:
+        value = await self.get_json(key)
+        self.kv.pop(key, None)
+        return value
+
     async def delete(self, key: str) -> None:
         self.kv.pop(key, None)
 

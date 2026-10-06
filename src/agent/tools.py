@@ -28,6 +28,7 @@ from pydantic import (
 )
 
 from src.agent.dates import DateParseError, resolve_date, resolve_datetime
+from src.agent.pending import create_pending_action, public_pending_action
 from src.clients.business_api import BusinessApiClient, UpstreamError
 from src.clients.kb_client import KbClient
 from src.deps import RequestContext
@@ -224,6 +225,16 @@ class SearchPolicyInput(ToolInput):
         return v.upper() if v else v
 
 
+class ProposeChangeInput(ToolInput):
+    confirmation_code: Annotated[str, Field(pattern=r"^[A-Za-z0-9]{6}$", description="6-character confirmation code.")]
+    new_return_at: LocalDateTime
+
+    @field_validator("confirmation_code")
+    @classmethod
+    def _upper(cls, v: str) -> str:
+        return v.upper()
+
+
 # ---------------------------------------------------------------- outcomes
 
 
@@ -232,6 +243,7 @@ class ToolOutcome:
     data: dict[str, Any]
     cards: list[dict[str, Any]] = field(default_factory=list)
     sources: list[dict[str, Any]] = field(default_factory=list)
+    pending_action: dict[str, Any] | None = None
 
 
 @dataclass
@@ -244,6 +256,7 @@ class ToolExecution:
     args: dict[str, Any] | None = None
     cards: list[dict[str, Any]] = field(default_factory=list)
     sources: list[dict[str, Any]] = field(default_factory=list)
+    pending_action: dict[str, Any] | None = None
 
     def trace(self) -> dict[str, Any]:
         return {"tool": self.call.name, "status": self.status, "latency_ms": self.latency_ms,
@@ -334,6 +347,22 @@ async def _search_policy(args: SearchPolicyInput, ctx: ToolContext) -> ToolOutco
     )
 
 
+async def _propose_reservation_change(args: ProposeChangeInput, ctx: ToolContext) -> ToolOutcome:
+    """Phase one of the two-phase write: price the change and park it. Nothing is modified here."""
+    preview = await ctx.api.preview_change(args.confirmation_code, args.new_return_at)
+    pending = await create_pending_action(ctx, preview)
+    public = public_pending_action(pending)
+    data = {
+        "status": "AWAITING_CUSTOMER_CONFIRMATION",
+        **{k: public[k] for k in ("action_id", "summary", "old_total", "new_total", "price_delta", "currency",
+                                  "expires_at")},
+        "vehicle_changed": preview.get("vehicle_changed", False),
+        "instructions": "Nothing has been changed yet. Ask the customer to review the change and press the "
+                        "Confirm button. You cannot confirm it for them.",
+    }
+    return ToolOutcome(data=data, cards=[{"type": "pending_action", "data": public}], pending_action=public)
+
+
 # ---------------------------------------------------------------- registry
 
 
@@ -379,6 +408,10 @@ TOOLS: dict[str, Tool] = {t.name: t for t in (
          "Search rental policies: insurance coverage, accident procedure, cancellation/modification, roadside "
          "assistance, rental terms. Filter by the customer's purchased plan_code when explaining coverage.",
          SearchPolicyInput, _search_policy),
+    Tool("propose_reservation_change",
+         "Propose changing the return date of one of the customer's reservations. This only prepares the change "
+         "and its price; the customer must press the Confirm button to apply it.",
+         ProposeChangeInput, _propose_reservation_change),
 )}
 
 
@@ -426,6 +459,7 @@ async def execute_tool(call: ToolCall, ctx: ToolContext, tools: dict[str, Tool] 
     validated: dict[str, Any] | None = None
     cards: list[dict[str, Any]] = []
     sources: list[dict[str, Any]] = []
+    pending_action: dict[str, Any] | None = None
 
     if tool is None:
         result = _error(ErrorCode.VALIDATION_ERROR, f"Unknown tool '{call.name}'. Available: {', '.join(tools)}.")
@@ -451,13 +485,14 @@ async def execute_tool(call: ToolCall, ctx: ToolContext, tools: dict[str, Tool] 
                 result = {"ok": True, **outcome.data}
                 if notes.notes:
                     result["assumptions"] = list(dict.fromkeys(notes.notes))
-                cards, sources = outcome.cards, outcome.sources
+                cards, sources, pending_action = outcome.cards, outcome.sources, outcome.pending_action
 
     latency_ms = round((time.perf_counter() - started) * 1000, 1)
     ok = result["ok"]
     execution = ToolExecution(
         call=call, status="ok" if ok else "error", error_code=None if ok else result["error_code"],
         latency_ms=latency_ms, result=result, args=validated, cards=cards, sources=sources,
+        pending_action=pending_action,
     )
     log_args = redact_args(call.arguments)
     logger.info("tool_call", tool=call.name, status=execution.status, error_code=execution.error_code,

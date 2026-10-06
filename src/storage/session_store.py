@@ -34,6 +34,10 @@ class SessionStore(Protocol):
 
     async def set_json(self, key: str, value: Any, ttl_seconds: int) -> None: ...
 
+    async def pop_json(self, key: str) -> Any | None:
+        """Atomically read and delete (claims a key so only one caller proceeds)."""
+        ...
+
     async def delete(self, key: str) -> None: ...
 
 
@@ -78,6 +82,10 @@ class RedisSessionStore:
 
     async def set_json(self, key: str, value: Any, ttl_seconds: int) -> None:
         await self._r.set(key, dumps(value), ex=ttl_seconds)
+
+    async def pop_json(self, key: str) -> Any | None:
+        raw = await self._r.getdel(key)
+        return json.loads(raw) if raw is not None else None
 
     async def delete(self, key: str) -> None:
         await self._r.delete(key)

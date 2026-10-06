@@ -18,7 +18,7 @@ from redis.exceptions import RedisError
 
 from src.deps import Services
 from src.llm.gateway import create_llm_gateway
-from src.routers import auth, chat
+from src.routers import actions, auth, chat
 from src.shared.errors import ErrorCode, error_response, install_exception_handlers
 from src.shared.middleware import RequestContextMiddleware
 from src.storage.audit import MongoAuditLog
@@ -108,6 +108,7 @@ def create_app(services: Services | None = None) -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(chat.router)
+    app.include_router(actions.router)
     app.add_api_route("/health", health, methods=["GET"])
     return app
 

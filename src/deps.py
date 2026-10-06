@@ -1,6 +1,6 @@
 """Request-scoped identity and app-wide service wiring for the agent API."""
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 from fastapi import Depends, Request
@@ -10,6 +10,7 @@ from src.shared.auth import Principal, require_principal
 from src.storage.audit import AuditLog
 from src.storage.history_store import HistoryStore
 from src.storage.session_store import SessionStore
+from src.utils.config import Settings, get_settings
 from src.utils.logger import bind_log_context
 
 
@@ -31,6 +32,7 @@ class Services:
     llm: LLMGateway
     http: httpx.AsyncClient  # to mock_services
     ping_mongo: Callable[[], Awaitable[object]]
+    settings: Settings = field(default_factory=get_settings)
 
 
 def get_services(request: Request) -> Services:

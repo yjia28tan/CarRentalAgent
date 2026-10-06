@@ -99,6 +99,8 @@ class Orchestrator:
                         result.sources.append(s)
                 if ex.status == "ok" and ex.args is not None:
                     apply_tool_result(trip, ex.call.name, ex.args, ex.result)
+                if ex.pending_action is not None:
+                    result.pending_action = ex.pending_action
 
         logger.warning("max_steps_reached", steps=settings.agent_max_steps)
         return MAX_STEPS_REPLY

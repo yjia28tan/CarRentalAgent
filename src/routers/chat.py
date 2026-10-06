@@ -10,12 +10,12 @@ from redis.exceptions import RedisError
 
 from src.agent.context import empty_context
 from src.agent.orchestrator import Orchestrator
+from src.agent.pending import current_pending_for_session
 from src.agent.tools import ToolContext
 from src.clients.business_api import BusinessApiClient
 from src.clients.kb_client import KbClient
 from src.deps import RequestContext, Services, get_request_context, get_services
 from src.shared.errors import AppError, ErrorCode
-from src.utils.config import get_settings
 from src.utils.logger import bind_log_context, get_logger
 from src.utils.utils import new_id, utcnow
 
@@ -93,7 +93,7 @@ async def send_message(
     ctx: RequestContext = Depends(get_request_context),
     services: Services = Depends(get_services),
 ):
-    settings = get_settings()
+    settings = services.settings
     await _require_active_session(services, ctx, sid)
     bind_log_context(session_id=sid)
 
@@ -130,12 +130,17 @@ async def send_message(
         # The customer still gets the answer; only the history write is lost.
         logger.error("history_persist_failed", error=type(exc).__name__)
 
+    # Keep showing an unconfirmed change (e.g. after the customer types "yes, confirm"): the LLM can't apply it.
+    pending_action = result.pending_action or await current_pending_for_session(
+        services.sessions, sid, ctx.customer_id
+    )
+
     return {
         "request_id": ctx.request_id,
         "message_id": assistant_message_id,
         "reply": result.reply,
         "cards": result.cards,
-        "pending_action": result.pending_action,
+        "pending_action": pending_action,
         "sources": result.sources,
         "tool_trace": result.tool_trace,
     }

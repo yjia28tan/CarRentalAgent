@@ -99,6 +99,21 @@ class BusinessApiClient:
     async def get_reservation(self, code: str) -> dict[str, Any]:
         return await self._request("GET", f"/v1/me/reservations/{code}")
 
+    async def preview_change(self, code: str, new_return_at: datetime) -> dict[str, Any]:
+        return await self._request(
+            "POST", f"/v1/me/reservations/{code}/change-previews", json={"new_return_at": new_return_at.isoformat()}
+        )
+
+    async def apply_change(
+        self, code: str, preview_id: str, expected_version: int, idempotency_key: str
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            f"/v1/me/reservations/{code}/changes",
+            json={"preview_id": preview_id, "expected_version": expected_version},
+            headers={"Idempotency-Key": idempotency_key},
+        )
+
     # --- knowledge base ---
     async def kb_search(self, query: str, top_k: int, categories: list[str] | None, plan_code: str | None) -> dict:
         body = {"query": query, "top_k": top_k, "filters": {"categories": categories, "plan_code": plan_code}}
