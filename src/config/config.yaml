@@ -3,6 +3,8 @@
 
 app_env: dev
 log_level: INFO
+# text = readable multi-line logs; json = one JSON object per line (use for log collectors)
+log_format: text
 default_timezone: America/Vancouver
 company_name: Maple Car Rental
 openapi_docs: true

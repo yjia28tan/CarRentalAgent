@@ -479,7 +479,7 @@ async def execute_tool(call: ToolCall, ctx: ToolContext, tools: dict[str, Tool] 
             except UpstreamError as exc:
                 result = _error(exc.code, exc.message, exc.details)
             except Exception:
-                logger.exception("tool_failed", tool=call.name)
+                logger.exception("Tool raised an unexpected error", tool=call.name)
                 result = _error(ErrorCode.INTERNAL_ERROR, "Unexpected error while running this tool.")
             else:
                 result = {"ok": True, **outcome.data}
@@ -495,7 +495,7 @@ async def execute_tool(call: ToolCall, ctx: ToolContext, tools: dict[str, Tool] 
         pending_action=pending_action,
     )
     log_args = redact_args(call.arguments)
-    logger.info("tool_call", tool=call.name, status=execution.status, error_code=execution.error_code,
+    logger.info("Tool call finished", tool=call.name, status=execution.status, error_code=execution.error_code,
                 latency_ms=latency_ms, args=log_args)
     await ctx.audit.record(
         "VALIDATION_ERROR" if execution.error_code == ErrorCode.VALIDATION_ERROR else "TOOL_CALL",

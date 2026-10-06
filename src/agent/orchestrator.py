@@ -74,7 +74,7 @@ def system_prompt_for(ctx: ToolContext, trip: dict[str, Any]) -> str:
 
 
 async def record_llm_error(ctx: ToolContext, exc: LLMError) -> None:
-    logger.error("llm_error", error=str(exc))
+    logger.error("LLM unavailable; returning fallback reply", error=str(exc))
     await ctx.audit.record("LLM_ERROR", session_id=ctx.session_id, customer_id=ctx.request.customer_id,
                            outcome="fallback", error=str(exc)[:300])
 
@@ -108,7 +108,7 @@ class Orchestrator:
             async with asyncio.timeout(ctx.settings.turn_timeout_seconds):
                 result.reply = await self._loop(user_message, history, trip, ctx, result)
         except TimeoutError:
-            logger.warning("turn_timeout", steps=len(result.executions))
+            logger.warning("Turn timed out", steps=len(result.executions))
             result.reply = TIMEOUT_REPLY
         return result
 
@@ -142,5 +142,5 @@ class Orchestrator:
                 if ex.status == "ok" and ex.args is not None:
                     apply_tool_result(trip, ex.call.name, ex.args, ex.result)
 
-        logger.warning("max_steps_reached", steps=settings.agent_max_steps)
+        logger.warning("Step limit reached", steps=settings.agent_max_steps)
         return MAX_STEPS_REPLY

@@ -38,6 +38,10 @@ class SessionStore(Protocol):
         """Atomically read and delete (claims a key so only one caller proceeds)."""
         ...
 
+    async def incr(self, key: str, ttl_seconds: int) -> int:
+        """Atomic counter; the TTL is set when the key is created."""
+        ...
+
     async def delete(self, key: str) -> None: ...
 
 
@@ -86,6 +90,13 @@ class RedisSessionStore:
     async def pop_json(self, key: str) -> Any | None:
         raw = await self._r.getdel(key)
         return json.loads(raw) if raw is not None else None
+
+    async def incr(self, key: str, ttl_seconds: int) -> int:
+        async with self._r.pipeline(transaction=True) as pipe:
+            pipe.incr(key)
+            pipe.expire(key, ttl_seconds, nx=True)
+            count, _ = await pipe.execute()
+        return int(count)
 
     async def delete(self, key: str) -> None:
         await self._r.delete(key)

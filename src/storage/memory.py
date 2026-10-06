@@ -64,6 +64,13 @@ class InMemorySessionStore:
         self.kv.pop(key, None)
         return value
 
+    async def incr(self, key: str, ttl_seconds: int) -> int:
+        current = await self.get_json(key)
+        expires = self.kv[key][1] if current is not None else time.monotonic() + ttl_seconds
+        count = int(current or 0) + 1
+        self.kv[key] = (dumps(count), expires)
+        return count
+
     async def delete(self, key: str) -> None:
         self.kv.pop(key, None)
 

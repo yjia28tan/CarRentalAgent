@@ -153,7 +153,8 @@ async def _write(docs: list[PolicyDoc], chunks: list[Chunk], vectors: np.ndarray
 
 
 def main() -> None:
-    configure_logging(get_settings().log_level)
+    settings = get_settings()
+    configure_logging(settings.log_level, settings.log_format)
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--policies-dir", type=Path, default=DEFAULT_POLICIES_DIR)
     args = parser.parse_args()
@@ -165,7 +166,7 @@ def main() -> None:
     if vectors.shape != (len(chunks), EMBEDDING_DIM):
         raise RuntimeError(f"Unexpected embedding shape {vectors.shape}")
     asyncio.run(_write(docs, chunks, vectors))
-    logger.info("ingest_complete", documents=len(docs), chunks=len(chunks))
+    logger.info("Policies ingested", documents=len(docs), chunks=len(chunks))
 
 
 if __name__ == "__main__":

@@ -270,7 +270,7 @@ async def _run(anchor: date) -> None:
     finally:
         await conn.close()
     logger.info(
-        "seed_complete",
+        "Seed data loaded",
         anchor_date=anchor.isoformat(),
         customers=len(seed.customers),
         vehicles=len(seed.vehicles),
@@ -280,7 +280,7 @@ async def _run(anchor: date) -> None:
 
 def main() -> None:
     settings = get_settings()
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, settings.log_format)
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--anchor-date",

@@ -54,7 +54,7 @@ def build_app(anchor: date):
         http=httpx.AsyncClient(transport=httpx.ASGITransport(app=mock_app), base_url="http://mock-services.local"),
         ping_mongo=_no_mongo,
     )
-    logger.info("dev_server_ready", anchor_date=anchor.isoformat(), kb_chunks=len(kb),
+    logger.info("Dev server ready", anchor_date=anchor.isoformat(), kb_chunks=len(kb),
                 llm=type(services.llm).__name__, orchestrator=get_settings().agent_orchestrator)
     return create_agent_app(services)
 
@@ -67,7 +67,7 @@ def main() -> None:
     parser.add_argument("--anchor-date", type=date.fromisoformat,
                         default=datetime.now(ZoneInfo(settings.default_timezone)).date())
     args = parser.parse_args()
-    uvicorn.run(build_app(args.anchor_date), host=args.host, port=args.port, access_log=False)
+    uvicorn.run(build_app(args.anchor_date), host=args.host, port=args.port, access_log=False, log_config=None)
 
 
 if __name__ == "__main__":

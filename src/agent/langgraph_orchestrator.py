@@ -68,7 +68,7 @@ class LangGraphOrchestrator:
     async def _agent_node(self, state: TurnState, config: RunnableConfig) -> dict[str, Any]:
         ctx = _tool_ctx(config)
         if state["steps"] >= ctx.settings.agent_max_steps:
-            logger.warning("max_steps_reached", steps=state["steps"])
+            logger.warning("Step limit reached", steps=state["steps"])
             return {"reply": MAX_STEPS_REPLY}
         # LLMError propagates out of the graph and is turned into the fallback reply in run_turn.
         response = await self.llm.complete(system_prompt_for(ctx, state["trip"]), state["messages"], self._specs)
@@ -114,10 +114,10 @@ class LangGraphOrchestrator:
             await record_llm_error(ctx, exc)
             reply = LLM_ERROR_REPLY
         except GraphRecursionError:
-            logger.warning("max_steps_reached", steps=last.get("steps"))
+            logger.warning("Step limit reached (graph recursion limit)", steps=last.get("steps"))
             reply = MAX_STEPS_REPLY
         except TimeoutError:
-            logger.warning("turn_timeout", steps=len(last["executions"]))
+            logger.warning("Turn timed out", steps=len(last["executions"]))
             reply = TIMEOUT_REPLY
 
         trip.clear()

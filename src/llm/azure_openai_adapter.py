@@ -84,7 +84,7 @@ class AzureOpenAIAdapter:
             max_retries=0,  # retries are handled here so each attempt is logged
             http_client=http_client,
         )
-        logger.info("llm_client_ready", provider=self.provider, model=self.model,
+        logger.info("LLM client ready", provider=self.provider, model=self.model,
                     endpoint_host=urlparse(settings.llm_endpoint).hostname, proxied=http_client is not None)
 
     async def complete(self, system: str, messages: list[dict[str, Any]], tools: list[ToolSpec]) -> LLMResponse:
@@ -97,14 +97,14 @@ class AzureOpenAIAdapter:
             try:
                 completion = await self._client.chat.completions.create(**kwargs)
             except _TRANSIENT as exc:
-                logger.warning("llm_call_failed", provider=self.provider, model=self.model, attempt=attempt + 1,
+                logger.warning("LLM call failed (transient)", provider=self.provider, model=self.model, attempt=attempt + 1,
                                error=type(exc).__name__, latency_ms=_ms(started))
                 if attempt < self.max_retries:
                     await asyncio.sleep(_BACKOFF_BASE_SECONDS * 2**attempt)
                     continue
                 raise LLMError(f"LLM unavailable after {attempt + 1} attempts: {type(exc).__name__}") from exc
             except openai.OpenAIError as exc:
-                logger.error("llm_call_failed", provider=self.provider, model=self.model, attempt=attempt + 1,
+                logger.error("LLM call rejected", provider=self.provider, model=self.model, attempt=attempt + 1,
                              error=type(exc).__name__, status=getattr(exc, "status_code", None),
                              provider_error_code=getattr(exc, "code", None), latency_ms=_ms(started))
                 raise LLMError(f"LLM request rejected: {type(exc).__name__}") from exc
@@ -112,7 +112,7 @@ class AzureOpenAIAdapter:
             choice = completion.choices[0]
             usage = completion.usage
             logger.info(
-                "llm_call",
+                "LLM call completed",
                 provider=self.provider,
                 model=self.model,
                 latency_ms=_ms(started),

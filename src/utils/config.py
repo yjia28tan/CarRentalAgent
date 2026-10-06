@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     # General
     app_env: str = "dev"
     log_level: str = "INFO"
+    log_format: Literal["text", "json"] = "text"
     default_timezone: str = "America/Vancouver"
     company_name: str = "Car Rental Company"
     openapi_docs: bool = True

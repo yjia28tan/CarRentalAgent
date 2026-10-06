@@ -60,14 +60,14 @@ class RequestContextMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
         except Exception:
-            logger.exception("unhandled_exception", path=scope.get("path"))
+            logger.exception("Unhandled exception", path=scope.get("path"))
             if response_started:
                 raise
             response = error_response(ErrorCode.INTERNAL_ERROR, request_id=request_id)
             await response(scope, receive, send_wrapper)
         finally:
             logger.info(
-                "http_request",
+                "HTTP request handled",
                 method=scope.get("method"),
                 path=scope.get("path"),
                 status=status_code,

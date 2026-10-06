@@ -19,7 +19,7 @@ from src.utils.config import get_settings
 from src.utils.logger import configure_logging, get_logger
 
 settings = get_settings()
-configure_logging(settings.log_level)
+configure_logging(settings.log_level, settings.log_format)
 logger = get_logger(__name__)
 
 
@@ -37,17 +37,21 @@ def create_app(repo: Repository | None = None, embedder: Embedder | None = None,
             from src.mock_services.pg_repository import PgRepository
 
             app.state.repo = await PgRepository.create(dsn)
-            logger.info("postgres_pool_ready")
+            logger.info("PostgreSQL connection pool ready")
+        else:
+            logger.info("Using provided repository", repository=type(app.state.repo).__name__)
         if warm_up_embedder:
             # Load the model at startup so the first KB search doesn't hit the tool timeout.
             await asyncio.to_thread(app.state.embedder, ["warm up"])
-            logger.info("embedding_model_ready")
+            logger.info("Embedding model loaded", model=settings.embedding_model)
+        logger.info("Mock services started")
         try:
             yield
         finally:
             if owns_repo:
                 await app.state.repo.close()
                 app.state.repo = None
+                logger.info("PostgreSQL connection pool closed")
 
     app = FastAPI(
         title="Mock Enterprise Services",

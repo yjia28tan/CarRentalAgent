@@ -5,6 +5,7 @@ Run: uvicorn app_main:app --port 8000
 import asyncio
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 import httpx
 import redis.asyncio as aioredis
@@ -28,19 +29,30 @@ from src.utils.config import get_settings
 from src.utils.logger import configure_logging, get_logger, get_request_id
 
 settings = get_settings()
-configure_logging(settings.log_level)
+configure_logging(settings.log_level, settings.log_format)
 logger = get_logger(__name__)
 
 HEALTH_CHECK_TIMEOUT_SECONDS = 2
 
 
+def _host(url: str) -> str:
+    """host:port only, so credentials in connection URLs never reach the logs."""
+    parsed = urlparse(url)
+    return f"{parsed.hostname}:{parsed.port}" if parsed.port else str(parsed.hostname)
+
+
 @asynccontextmanager
 async def _real_services() -> AsyncIterator[Services]:
     # All clients connect lazily, so the app starts even if a dependency is down; /health reports it.
-    redis = aioredis.from_url(settings.redis_url.get_secret_value(), decode_responses=True)
-    mongo = AsyncMongoClient(settings.mongo_uri.get_secret_value(), serverSelectionTimeoutMS=2000, tz_aware=True)
+    redis_url = settings.redis_url.get_secret_value()
+    redis = aioredis.from_url(redis_url, decode_responses=True)
+    logger.info("Redis client created", host=_host(redis_url))
+    mongo_uri = settings.mongo_uri.get_secret_value()
+    mongo = AsyncMongoClient(mongo_uri, serverSelectionTimeoutMS=2000, tz_aware=True)
     db = mongo[settings.mongo_db]
+    logger.info("MongoDB client created", host=_host(mongo_uri), database=settings.mongo_db)
     http = httpx.AsyncClient(base_url=settings.mock_services_url, timeout=settings.tool_timeout_seconds)
+    logger.info("HTTP client for business services created", base_url=settings.mock_services_url)
     services = Services(
         sessions=RedisSessionStore(redis),
         history=MongoHistoryStore(db, redis),
@@ -52,14 +64,16 @@ async def _real_services() -> AsyncIterator[Services]:
     try:
         await services.history.ensure_indexes()
         await services.audit.ensure_indexes()
+        logger.info("MongoDB indexes ensured")
     except PyMongoError as exc:
-        logger.warning("mongo_indexes_not_created", error=type(exc).__name__)
+        logger.warning("MongoDB indexes not created; is MongoDB running?", error=type(exc).__name__)
     try:
         yield services
     finally:
         await http.aclose()
         await mongo.close()
         await redis.aclose()
+        logger.info("HTTP, MongoDB and Redis clients closed")
 
 
 def create_app(services: Services | None = None) -> FastAPI:
@@ -73,9 +87,10 @@ def create_app(services: Services | None = None) -> FastAPI:
             return
         async with _real_services() as real:
             app.state.services = real
-            logger.info("app_started", env=settings.app_env, llm=type(real.llm).__name__)
+            logger.info("Agent API started", env=settings.app_env, llm=type(real.llm).__name__,
+                        orchestrator=settings.agent_orchestrator)
             yield
-        logger.info("app_stopped")
+        logger.info("Agent API stopped")
 
     app = FastAPI(
         title="Car Rental Agent API",

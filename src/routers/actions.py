@@ -111,7 +111,10 @@ async def confirm_action(
         applied = await api.apply_change(code, pending["preview_id"], pending["expected_version"], action_id)
     except UpstreamError as exc:
         await services.audit.record("WRITE_REJECTED", outcome=str(exc.code), **audit_common)
-        if exc.code in FINAL_REJECTIONS:
+        final = exc.code in FINAL_REJECTIONS
+        logger.warning("Reservation change rejected", action_id=action_id, confirmation_code=redact_code(code),
+                       error_code=str(exc.code), retryable=not final)
+        if final:
             await _clear_session_pointer(services, pending)
             await _system_note(services, ctx, pending, f"Reservation {code} was not changed: {exc.message}")
         else:
@@ -126,6 +129,8 @@ async def confirm_action(
     await _clear_session_pointer(services, pending)
     await services.audit.record("WRITE_CONFIRMED", outcome="APPLIED",
                                 new_version=applied["reservation"]["version"], **audit_common)
+    logger.info("Reservation change applied", action_id=action_id, confirmation_code=redact_code(code),
+                new_version=applied["reservation"]["version"])
     await _system_note(services, ctx, pending,
                        f"Reservation {code} updated: return date {_short_date(pending['new_return_at'])}.")
     return response
@@ -146,6 +151,8 @@ async def cancel_action(
         args_redacted={"confirmation_code": redact_code(pending["confirmation_code"])},
         outcome="DISCARDED_BY_CUSTOMER", action_id=action_id,
     )
+    logger.info("Pending reservation change discarded", action_id=action_id,
+                confirmation_code=redact_code(pending["confirmation_code"]))
     await _system_note(services, ctx, pending,
                        f"Proposed change to reservation {pending['confirmation_code']} was discarded.")
     return {"status": "DISCARDED"}

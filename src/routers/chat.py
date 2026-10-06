@@ -15,6 +15,7 @@ from src.agent.tools import ToolContext
 from src.clients.business_api import BusinessApiClient
 from src.clients.kb_client import KbClient
 from src.deps import RequestContext, Services, get_request_context, get_services
+from src.rate_limit import enforce_chat_rate_limit
 from src.shared.errors import AppError, ErrorCode
 from src.utils.logger import bind_log_context, get_logger
 from src.utils.utils import new_id, utcnow
@@ -65,7 +66,7 @@ async def create_session(
     now = utcnow()
     await services.sessions.create_session(sid, ctx.customer_id, now)
     await services.history.create_conversation(sid, ctx.customer_id, now)
-    logger.info("session_created", session_id=sid)
+    logger.info("Chat session created", session_id=sid)
     return {"session_id": sid, "created_at": now.isoformat()}
 
 
@@ -95,6 +96,7 @@ async def send_message(
 ):
     settings = services.settings
     await _require_active_session(services, ctx, sid)
+    await enforce_chat_rate_limit(services, ctx, sid)
     bind_log_context(session_id=sid)
 
     received_at = utcnow()
@@ -133,6 +135,15 @@ async def send_message(
     # Keep showing an unconfirmed change (e.g. after the customer types "yes, confirm"): the LLM can't apply it.
     pending_action = result.pending_action or await current_pending_for_session(
         services.sessions, sid, ctx.customer_id
+    )
+    logger.info(
+        "Chat turn completed",
+        tools=[e.call.name for e in result.executions],
+        tool_errors=[e.error_code for e in result.executions if e.error_code],
+        cards=len(result.cards),
+        sources=len(result.sources),
+        pending_action=pending_action["action_id"] if pending_action else None,
+        latency_ms=round((utcnow() - received_at).total_seconds() * 1000, 1),
     )
 
     return {
