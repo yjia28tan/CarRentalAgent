@@ -9,7 +9,7 @@ Streamlit UI (ui/)
    |  HTTP + Bearer JWT
    v
 Agent API (app_main.py, src/)
-   |- middleware: request_id, JSON logging, rate limit (Redis)
+   |- middleware: request_id, structured logging, rate limit (Redis)
    |- auth dependency -> RequestContext(customer_id, request_id, raw_token)
    '- orchestrator (custom loop, or LangGraph via AGENT_ORCHESTRATOR)
         |- Redis:   sessions, trip context, history window, pending actions, quotes, KB cache, rate limits
@@ -28,20 +28,27 @@ Two trust boundaries: the agent verifies the JWT and derives `customer_id` itsel
 | Path | Contents |
 |---|---|
 | `app_main.py` | Agent API entry point (`create_app`) |
-| `src/agent/` | orchestrators, tools, prompts, dates, trip context, pending actions |
+| `src/agent/` | orchestrators (custom and LangGraph), tools, prompts, dates, trip context, pending actions |
 | `src/llm/` | `LLMGateway`, Azure OpenAI adapter, `FakeLLM` |
 | `src/clients/`, `src/storage/` | HTTP clients to the mock services; Redis/Mongo stores and in-memory equivalents |
-| `src/routers/` | `/auth`, `/chat`, `/actions` |
-| `src/mock_services/` | stand-in enterprise APIs, KB search, pricing |
-| `src/shared/`, `src/utils/` | JWT, error format, middleware, settings, logging |
+| `src/routers/`, `src/rate_limit.py` | `/auth`, `/chat`, `/actions`; per-customer and login rate limits |
+| `src/mock_services/` | stand-in enterprise APIs, auth, KB search, pricing |
+| `src/shared/`, `src/utils/`, `src/config/config.yaml` | JWT, error format, middleware; settings, logging; non-secret settings |
 | `db/init.sql`, `policies/`, `scripts/` | schema, policy documents, seed / ingest / dev-server scripts |
 | `ui/` | Streamlit app |
+| `tests/` | pytest suite (no Docker needed) |
+| `docker-compose.yml`, `Dockerfile`, `secrets.env.example` | container setup and the template for local secrets |
+| `CAR_RENTAL_AGENT_SPEC.md` | the build specification this project implements |
 
 ## Prerequisites
 
 - Docker Desktop (Compose v2) for the full stack.
 - An Azure OpenAI deployment that supports tool calling: endpoint, API key, API version and deployment name.
-- Python 3.11+ only if you want to run the tests or the dev server outside Docker.
+- Python 3.11+ (tested on 3.13) only if you want to run the tests or the dev server outside Docker.
+
+## Secrets
+
+All secrets (JWT signing key, LLM API key, database credentials) go in `secrets.env`, created from `secrets.env.example`. It is git-ignored and excluded from Docker images; never commit it. If a key is ever exposed (pasted into a chat, a log or a ticket), rotate it.
 
 ## Setup (Docker)
 
@@ -67,11 +74,26 @@ Logs default to a readable multi-line format (`LOG_FORMAT=text`): timestamp and 
 
 ## Run without Docker (dev server)
 
-For trying the UI on a machine without Docker, one process runs the agent API, the mock services (in-memory data seeded like `seed_data.py`, policies embedded with MiniLM) and in-memory replacements for Redis and MongoDB. It uses the LLM configured in `secrets.env`, and data resets on restart.
+For trying the UI on a machine without Docker, one process runs the agent API, the mock services (in-memory data seeded like `seed_data.py`, policies embedded with MiniLM) and in-memory replacements for Redis and MongoDB. It uses the LLM configured in `secrets.env` (the database URLs there are ignored in this mode), and data resets on restart.
 ```
-python scripts/dev_server.py                 # http://localhost:8000
-streamlit run ui/streamlit_app.py            # http://localhost:8501
+python scripts/dev_server.py [--port 8000] [--anchor-date YYYY-MM-DD]   # http://localhost:8000
+streamlit run ui/streamlit_app.py                                       # http://localhost:8501
 ```
+Set `AGENT_API_URL` for the UI if the API is not on `http://localhost:8000`.
+
+## API
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /auth/login` | Email + password -> JWT (credentials checked by the auth service) |
+| `POST /chat/sessions` | Start a chat session for the signed-in customer |
+| `POST /chat/sessions/{sid}/messages` | One agent turn: reply, cards, sources, tool trace, pending action |
+| `GET /chat/sessions/{sid}/messages` | Conversation history (own sessions only) |
+| `POST /actions/{id}/confirm` | Apply a proposed change (`Idempotency-Key` header required) |
+| `POST /actions/{id}/cancel` | Discard a proposed change |
+| `GET /health` | Status of Postgres (via the mock services), MongoDB and Redis |
+
+All errors use `{"error": {"code", "message", "request_id"}}`; every response carries an `X-Request-ID` header. Interactive docs: http://localhost:8000/docs.
 
 ## Demo accounts
 
@@ -98,11 +120,12 @@ For the dev server, restart it (optionally with `--anchor-date`).
 ## Running the tests
 
 ```
-python -m venv .venv && .venv/Scripts/activate      # or source .venv/bin/activate
+python -m venv .venv
+.venv\Scripts\activate          # Windows; on macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 pytest
 ```
-The tests need no Docker: they use in-memory stores, the mock services in-process, a deterministic `FakeLLM`, and a hashed bag-of-words embedder instead of MiniLM. Agent, scenario, two-phase-write and UI tests run once per orchestrator implementation. Mock-service tests can also run against a real, disposable Postgres (they truncate it) with `TEST_POSTGRES_DSN=postgresql://... pytest`.
+The suite (about 370 tests, 1-2 minutes) needs no Docker: it uses in-memory stores, the mock services in-process, a deterministic `FakeLLM`, and a hashed bag-of-words embedder instead of MiniLM. Agent, scenario, two-phase-write and UI tests run once per orchestrator implementation. Mock-service tests can also run against a real, disposable Postgres (they truncate it) with `TEST_POSTGRES_DSN=postgresql://... pytest`.
 
 | File | Covers |
 |---|---|
@@ -118,7 +141,7 @@ The tests need no Docker: they use in-memory stores, the mock services in-proces
 - **Facts come from tools; deterministic logic lives in code.** Capacity filtering, pricing (`Decimal`), date resolution ("tomorrow", "next Friday", dates without a year) and availability are code. Assumptions made while resolving dates are returned to the model so it can state them.
 - **Fail gracefully.** Tool errors become structured results the model can explain; LLM failures, timeouts and step exhaustion return fixed friendly replies; every API error uses one JSON format with a `request_id` and never leaks internals.
 - **Mocks stand in for enterprise services.** Mapping to the real platforms: the Azure OpenAI adapter is the enterprise LLM behind `LLMGateway`; `KbClient` would call the enterprise KB/RAG search instead of `/v1/kb/search`; `/v1/auth/verify-credentials` stands in for the enterprise auth service (in production, SSO/OIDC with the agent validating the enterprise token); the business client keeps the same calls against the real REST APIs, forwarding the user's token.
-- **Observability.** JSON logs with `request_id` (propagated to the mock services), session and customer IDs; every LLM call (latency, tokens, stop reason, no prompt text) and tool call is logged; tool calls, authorization denials, writes, LLM errors and rate limiting are also written to MongoDB `audit_logs`, with confirmation codes redacted.
+- **Observability.** Structured logs (readable text by default, JSON with `LOG_FORMAT=json`) carry `request_id` (propagated to the mock services), session and customer IDs; every LLM call (latency, tokens, stop reason, no prompt text) and tool call is logged; tool calls, authorization denials, writes, LLM errors and rate limiting are also written to MongoDB `audit_logs`, with confirmation codes redacted.
 
 ### Orchestration: why not LangChain/LangGraph?
 

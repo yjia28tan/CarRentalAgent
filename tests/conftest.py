@@ -137,7 +137,11 @@ def agent(request, memory_repo):
     from app_main import create_app
     from src.deps import Services
     from src.llm.fake import FakeLLM
-    from src.storage.memory import InMemoryAuditLog, InMemoryHistoryStore, InMemorySessionStore
+    from src.storage.memory import (
+        InMemoryAuditLog,
+        InMemoryHistoryStore,
+        InMemorySessionStore,
+    )
     from src.utils.config import get_settings
     from tests.helpers import AgentHarness
 
