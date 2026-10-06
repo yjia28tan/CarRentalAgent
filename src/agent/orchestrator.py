@@ -1,7 +1,18 @@
-"""Tool-calling loop (spec section 7.2)."""
+"""
+Tool-calling loop (spec section 7.2), framework-free by design.
+
+Each turn calls the LLM up to AGENT_MAX_STEPS times. Requested tools run concurrently through
+execute_tool, which validates arguments and enforces TOOL_TIMEOUT_SECONDS per call; validation and
+upstream errors go back to the LLM as structured results so it can recover or ask the user.
+The whole turn is bounded by TURN_TIMEOUT_SECONDS, and no exception escapes the loop: LLM failures,
+timeouts and step exhaustion all return a fixed, friendly reply.
+Why no LangChain/LangGraph by default, and how this maps to LangGraph: see README, "Orchestration: why
+not LangChain/LangGraph?". The LangGraph variant (AGENT_ORCHESTRATOR=langgraph) is in langgraph_orchestrator.py.
+"""
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any
+from functools import lru_cache
+from typing import Any, Protocol
 
 from src.agent.context import apply_tool_result
 from src.agent.prompts import build_system_prompt
@@ -38,6 +49,50 @@ class TurnResult:
             for e in self.executions
         ]
 
+    def absorb(self, ex: ToolExecution) -> None:
+        """Collect a tool execution's trace, cards, de-duplicated sources and pending action."""
+        self.executions.append(ex)
+        self.cards.extend(ex.cards)
+        seen = {(s["doc_id"], s["section"]) for s in self.sources}
+        self.sources.extend(s for s in ex.sources if (s["doc_id"], s["section"]) not in seen)
+        if ex.pending_action is not None:
+            self.pending_action = ex.pending_action
+
+
+class TurnOrchestrator(Protocol):
+    async def run_turn(
+        self, *, user_message: str, history: list[dict[str, Any]], trip: dict[str, Any], ctx: ToolContext
+    ) -> TurnResult:
+        """Mutates `trip` in place from successful tool results. Never raises."""
+        ...
+
+
+def system_prompt_for(ctx: ToolContext, trip: dict[str, Any]) -> str:
+    s = ctx.settings
+    return build_system_prompt(company=s.company_name, now_local=ctx.now, timezone=s.default_timezone,
+                               customer_name=ctx.request.customer_name, trip=trip)
+
+
+async def record_llm_error(ctx: ToolContext, exc: LLMError) -> None:
+    logger.error("llm_error", error=str(exc))
+    await ctx.audit.record("LLM_ERROR", session_id=ctx.session_id, customer_id=ctx.request.customer_id,
+                           outcome="fallback", error=str(exc)[:300])
+
+
+def build_orchestrator(llm: LLMGateway, kind: str = "custom") -> TurnOrchestrator:
+    """AGENT_ORCHESTRATOR=custom|langgraph. Both share tools, validation, prompts and fallbacks."""
+    if kind == "langgraph":
+        return _langgraph_orchestrator(llm)
+    return Orchestrator(llm)
+
+
+@lru_cache(maxsize=8)
+def _langgraph_orchestrator(llm: LLMGateway) -> TurnOrchestrator:
+    # Compiling the graph once per gateway, not per turn.
+    from src.agent.langgraph_orchestrator import LangGraphOrchestrator
+
+    return LangGraphOrchestrator(llm)
+
 
 class Orchestrator:
     def __init__(self, llm: LLMGateway, tools: dict[str, Tool] | None = None) -> None:
@@ -64,19 +119,12 @@ class Orchestrator:
         settings = ctx.settings
         messages: list[dict[str, Any]] = [*history, {"role": "user", "content": user_message}]
         specs = [t.spec for t in self.tools.values()]
-        seen_sources: set[tuple[str, str]] = set()
 
         for _ in range(settings.agent_max_steps):
-            system = build_system_prompt(
-                company=settings.company_name, now_local=ctx.now, timezone=settings.default_timezone,
-                customer_name=ctx.request.customer_name, trip=trip,
-            )
             try:
-                response = await self.llm.complete(system, messages, specs)
+                response = await self.llm.complete(system_prompt_for(ctx, trip), messages, specs)
             except LLMError as exc:
-                logger.error("llm_error", error=str(exc))
-                await ctx.audit.record("LLM_ERROR", session_id=ctx.session_id, customer_id=ctx.request.customer_id,
-                                       outcome="fallback", error=str(exc)[:300])
+                await record_llm_error(ctx, exc)
                 return LLM_ERROR_REPLY
 
             if not response.tool_calls:
@@ -90,17 +138,9 @@ class Orchestrator:
             executions = await asyncio.gather(*(execute_tool(c, ctx, self.tools) for c in response.tool_calls))
             for ex in executions:
                 messages.append(ex.message())
-                result.executions.append(ex)
-                result.cards.extend(ex.cards)
-                for s in ex.sources:
-                    key = (s["doc_id"], s["section"])
-                    if key not in seen_sources:
-                        seen_sources.add(key)
-                        result.sources.append(s)
+                result.absorb(ex)
                 if ex.status == "ok" and ex.args is not None:
                     apply_tool_result(trip, ex.call.name, ex.args, ex.result)
-                if ex.pending_action is not None:
-                    result.pending_action = ex.pending_action
 
         logger.warning("max_steps_reached", steps=settings.agent_max_steps)
         return MAX_STEPS_REPLY

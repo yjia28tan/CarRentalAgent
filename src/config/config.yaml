@@ -23,6 +23,9 @@ llm_provider: azure_openai
 llm_timeout_seconds: 30
 llm_max_retries: 2
 
+# custom = framework-free loop (default); langgraph = same tools/validation run as a LangGraph graph
+agent_orchestrator: custom
+
 agent_max_steps: 6
 tool_timeout_seconds: 8
 turn_timeout_seconds: 45

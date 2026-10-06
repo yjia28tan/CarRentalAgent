@@ -6,6 +6,7 @@ Secrets and connection strings live in secrets.env; non-secret tunables live in 
 """
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import SecretStr, model_validator
 from pydantic_settings import (
@@ -66,6 +67,7 @@ class Settings(BaseSettings):
     https_proxy: str = ""
 
     # Agent behaviour
+    agent_orchestrator: Literal["custom", "langgraph"] = "custom"
     agent_max_steps: int = 6
     tool_timeout_seconds: float = 8
     turn_timeout_seconds: float = 45

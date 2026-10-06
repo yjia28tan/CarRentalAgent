@@ -9,7 +9,7 @@ from pymongo.errors import PyMongoError
 from redis.exceptions import RedisError
 
 from src.agent.context import empty_context
-from src.agent.orchestrator import Orchestrator
+from src.agent.orchestrator import build_orchestrator
 from src.agent.pending import current_pending_for_session
 from src.agent.tools import ToolContext
 from src.clients.business_api import BusinessApiClient
@@ -107,7 +107,7 @@ async def send_message(
         request=ctx, session_id=sid, api=api, kb=KbClient(api, services.sessions), sessions=services.sessions,
         audit=services.audit, settings=settings, now=received_at.astimezone(ZoneInfo(settings.default_timezone)),
     )
-    result = await Orchestrator(services.llm).run_turn(
+    result = await build_orchestrator(services.llm, settings.agent_orchestrator).run_turn(
         user_message=body.message, history=history, trip=trip, ctx=tool_ctx
     )
 

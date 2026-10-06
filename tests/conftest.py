@@ -131,12 +131,14 @@ def mock_services_http(repo) -> "httpx.AsyncClient":
     )
 
 
-@pytest.fixture
-def agent(memory_repo):
+@pytest.fixture(params=["custom", "langgraph"])
+def agent(request, memory_repo):
+    """Agent API harness; every test using it runs once per orchestrator implementation."""
     from app_main import create_app
     from src.deps import Services
     from src.llm.fake import FakeLLM
     from src.storage.memory import InMemoryAuditLog, InMemoryHistoryStore, InMemorySessionStore
+    from src.utils.config import get_settings
     from tests.helpers import AgentHarness
 
     llm = FakeLLM()
@@ -147,6 +149,7 @@ def agent(memory_repo):
         llm=llm,
         http=mock_services_http(memory_repo),
         ping_mongo=_noop,
+        settings=get_settings().model_copy(update={"agent_orchestrator": request.param}),
     )
     with TestClient(create_app(services)) as client:
         yield AgentHarness(client, services, llm, memory_repo)
