@@ -8,6 +8,7 @@ import numpy as np
 
 from src.mock_services.db import create_pool
 from src.mock_services.repository import (
+    Customer,
     InsurancePlan,
     KbHit,
     Location,
@@ -77,6 +78,12 @@ class PgRepository:
 
     async def close(self) -> None:
         await self._pool.close()
+
+    async def get_customer_by_email(self, email: str) -> Customer | None:
+        row = await self._pool.fetchrow(
+            "SELECT id, email, full_name, password_hash FROM customers WHERE lower(email) = lower($1)", email
+        )
+        return Customer(row["id"], row["email"], row["full_name"], row["password_hash"]) if row else None
 
     async def list_locations(self) -> list[Location]:
         rows = await self._pool.fetch("SELECT * FROM locations ORDER BY id")

@@ -12,6 +12,7 @@ import numpy as np
 
 from src.mock_services.repository import (
     ACTIVE_STATUSES,
+    Customer,
     InsurancePlan,
     KbHit,
     Location,
@@ -55,6 +56,12 @@ class InMemoryRepository:
         return None
 
     async def close(self) -> None:
+        return None
+
+    async def get_customer_by_email(self, email: str) -> Customer | None:
+        for c in self.customers.values():
+            if c["email"].lower() == email.lower():
+                return Customer(c["id"], c["email"], c["full_name"], c["password_hash"])
         return None
 
     async def list_locations(self) -> list[Location]:

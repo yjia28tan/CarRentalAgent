@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     llm_api_version: str = ""
     llm_timeout_seconds: float = 30
     llm_max_retries: int = 2
+    # Outbound proxy for LLM traffic only (e.g. corporate network); internal calls stay direct.
+    http_proxy: str = ""
+    https_proxy: str = ""
 
     # Agent behaviour
     agent_max_steps: int = 6

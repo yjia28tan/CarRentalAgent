@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from src.mock_services.deps import Embedder
 from src.mock_services.repository import Repository
-from src.mock_services.routers import availability, kb, quotes, reservations
+from src.mock_services.routers import auth, availability, kb, quotes, reservations
 from src.mock_services.services.previews import PreviewStore
 from src.shared.errors import install_exception_handlers
 from src.shared.middleware import RequestContextMiddleware
@@ -66,7 +66,7 @@ def create_app(repo: Repository | None = None, embedder: Embedder | None = None,
 
     install_exception_handlers(app)
     app.add_middleware(RequestContextMiddleware)
-    for module in (availability, quotes, reservations, kb):
+    for module in (auth, availability, quotes, reservations, kb):
         app.include_router(module.router)
 
     @app.get("/health")

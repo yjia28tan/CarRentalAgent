@@ -22,3 +22,31 @@ def fake_embed(texts: list[str]) -> np.ndarray:
 def local(anchor: date, days: int, hour: int = 10) -> datetime:
     """anchor + days at hour:00 Vancouver time."""
     return datetime.combine(anchor + timedelta(days=days), time(hour), tzinfo=VANCOUVER)
+
+
+def naive(anchor: date, days: int, hour: int = 10) -> str:
+    """Local ISO string without offset, the way the LLM is told to pass dates."""
+    return local(anchor, days, hour).replace(tzinfo=None).isoformat(timespec="minutes")
+
+
+class AgentHarness:
+    """Agent API TestClient wired to in-memory stores, a FakeLLM, and the in-process mock services."""
+
+    def __init__(self, client, services, llm, repo) -> None:
+        self.client = client
+        self.services = services
+        self.llm = llm
+        self.repo = repo
+
+    def login(self, who: str) -> dict[str, str]:
+        resp = self.client.post("/auth/login", json={"email": f"{who}@example.com", "password": "demo123"})
+        assert resp.status_code == 200, resp.text
+        return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+    def new_session(self, headers: dict[str, str]) -> str:
+        resp = self.client.post("/chat/sessions", headers=headers)
+        assert resp.status_code == 200, resp.text
+        return resp.json()["session_id"]
+
+    def send(self, headers: dict[str, str], sid: str, message: str):
+        return self.client.post(f"/chat/sessions/{sid}/messages", json={"message": message}, headers=headers)

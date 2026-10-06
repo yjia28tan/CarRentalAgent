@@ -12,6 +12,14 @@ RESERVATION_STATUSES = ("CONFIRMED", "PICKED_UP", "RETURNED", "CANCELLED")
 
 
 @dataclass(frozen=True)
+class Customer:
+    id: UUID
+    email: str
+    full_name: str
+    password_hash: str
+
+
+@dataclass(frozen=True)
 class Location:
     id: int
     code: str
@@ -105,6 +113,10 @@ class Repository(Protocol):
     async def ping(self) -> None: ...
 
     async def close(self) -> None: ...
+
+    async def get_customer_by_email(self, email: str) -> Customer | None:
+        """Case-insensitive email lookup."""
+        ...
 
     async def list_locations(self) -> list[Location]: ...
 

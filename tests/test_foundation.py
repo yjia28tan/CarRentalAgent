@@ -118,17 +118,22 @@ def _agent_client(*, redis_ok=True, mongo_ok=True, pg_status="ok", seen_headers=
         code = 200 if pg_status == "ok" else 503
         return httpx.Response(code, json={"checks": {"postgres": pg_status}})
 
-    state = app_main.app.state
-    state.redis = SimpleNamespace(
+    from src.deps import Services
+    from src.llm.fake import FakeLLM
+    from src.storage.memory import InMemoryAuditLog, InMemoryHistoryStore
+
+    sessions = SimpleNamespace(
         ping=AsyncMock(return_value=True) if redis_ok else AsyncMock(side_effect=ConnectionError())
     )
-    state.mongo = SimpleNamespace(
-        admin=SimpleNamespace(
-            command=AsyncMock(return_value={"ok": 1}) if mongo_ok else AsyncMock(side_effect=TimeoutError())
-        )
+    services = Services(
+        sessions=sessions,
+        history=InMemoryHistoryStore(),
+        audit=InMemoryAuditLog(),
+        llm=FakeLLM(),
+        http=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://mock"),
+        ping_mongo=AsyncMock(return_value={"ok": 1}) if mongo_ok else AsyncMock(side_effect=TimeoutError()),
     )
-    state.http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://mock")
-    return TestClient(app_main.app)  # no context manager -> lifespan (real connections) not run
+    return TestClient(app_main.create_app(services))
 
 
 def test_health_all_ok_and_propagates_request_id():

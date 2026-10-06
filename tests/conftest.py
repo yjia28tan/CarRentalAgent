@@ -1,5 +1,7 @@
 import os
 
+import httpx
+
 # Must be set before any src.* import so cached settings never read real secrets.
 os.environ["APP_ENV"] = "test"
 os.environ["JWT_SECRET"] = "test-secret-not-for-production-0123456789"
@@ -111,3 +113,69 @@ def memory_client(memory_repo):
     app = create_app(repo=memory_repo, embedder=fake_embed)
     with TestClient(app) as client:
         yield client, memory_repo, app
+
+
+async def _noop() -> None:
+    return None
+
+
+def mock_services_http(repo) -> "httpx.AsyncClient":
+    """httpx client that calls the mock services app in-process (no network)."""
+    import httpx
+
+    from src.mock_services.main import create_app
+
+    return httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=create_app(repo=repo, embedder=fake_embed)),
+        base_url="http://mock-services.test",
+    )
+
+
+@pytest.fixture
+def agent(memory_repo):
+    from app_main import create_app
+    from src.deps import Services
+    from src.llm.fake import FakeLLM
+    from src.storage.memory import InMemoryAuditLog, InMemoryHistoryStore, InMemorySessionStore
+    from tests.helpers import AgentHarness
+
+    llm = FakeLLM()
+    services = Services(
+        sessions=InMemorySessionStore(),
+        history=InMemoryHistoryStore(),
+        audit=InMemoryAuditLog(),
+        llm=llm,
+        http=mock_services_http(memory_repo),
+        ping_mongo=_noop,
+    )
+    with TestClient(create_app(services)) as client:
+        yield AgentHarness(client, services, llm, memory_repo)
+
+
+@pytest.fixture
+def make_tool_ctx(memory_repo, customers):
+    """make_tool_ctx('daniel', http=None, **settings_overrides) -> ToolContext against the in-memory mock."""
+    from src.agent.tools import ToolContext
+    from src.clients.business_api import BusinessApiClient
+    from src.clients.kb_client import KbClient
+    from src.deps import RequestContext
+    from src.storage.memory import InMemoryAuditLog, InMemorySessionStore
+    from src.utils.config import get_settings
+
+    def _make(who: str = "daniel", http=None, **overrides):
+        c = customers[who]
+        token, _ = create_access_token(c["id"], c["full_name"])
+        api = BusinessApiClient(http or mock_services_http(memory_repo), token, "req_test")
+        sessions = InMemorySessionStore()
+        return ToolContext(
+            request=RequestContext(str(c["id"]), c["full_name"], "req_test", token),
+            session_id="sess_TEST",
+            api=api,
+            kb=KbClient(api, sessions),
+            sessions=sessions,
+            audit=InMemoryAuditLog(),
+            settings=get_settings().model_copy(update=overrides),
+            now=datetime.now(VANCOUVER),
+        )
+
+    return _make
