@@ -10,7 +10,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from pymongo.errors import PyMongoError
 from redis.exceptions import RedisError
 
-from src.agent.pending import EXPIRED_GRACE_SECONDS, is_expired, pending_key, session_pending_key
+from src.agent.pending import (
+    EXPIRED_GRACE_SECONDS,
+    is_expired,
+    pending_key,
+    session_pending_key,
+)
 from src.clients.business_api import BusinessApiClient, UpstreamError
 from src.deps import RequestContext, Services, get_request_context, get_services
 from src.shared.errors import AppError, ErrorCode

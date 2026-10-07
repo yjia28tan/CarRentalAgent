@@ -1,7 +1,11 @@
 """Azure OpenAI adapter: message/tool translation and proxy wiring (no network calls)."""
 import json
 
-from src.llm.azure_openai_adapter import proxied_http_client, to_openai_messages, to_openai_tools
+from src.llm.azure_openai_adapter import (
+    proxied_http_client,
+    to_openai_messages,
+    to_openai_tools,
+)
 from src.llm.gateway import ToolSpec
 from src.utils.config import get_settings
 

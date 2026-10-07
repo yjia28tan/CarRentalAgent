@@ -5,15 +5,24 @@ The agent API URL comes from AGENT_API_URL (default http://localhost:8000).
 import os
 import sys
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import streamlit as st  # noqa: E402
 
 from ui.api_client import AgentApiClient, ApiError  # noqa: E402
-from ui.views import money, reservation_card_from_api, render_cards, render_sources, render_tool_trace, signed_money, when  # noqa: E402
+from ui.views import (  # noqa: E402
+    money,
+    render_cards,
+    render_sources,
+    render_tool_trace,
+    reservation_card_from_api,
+    signed_money,
+    when,
+)
 
 DEMO_USERS = {
     "Daniel Lee": "daniel@example.com",

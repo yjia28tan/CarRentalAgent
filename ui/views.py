@@ -5,13 +5,13 @@ from typing import Any
 import streamlit as st
 
 
-def money(amount: float | int | None, currency: str | None) -> str:
+def money(amount: float | None, currency: str | None) -> str:
     if amount is None:
         return "-"
     return f"{currency or ''} {amount:,.2f}".strip()
 
 
-def signed_money(amount: float | int, currency: str) -> str:
+def signed_money(amount: float, currency: str) -> str:
     return ("+" if amount > 0 else "") + money(amount, currency)
 
 

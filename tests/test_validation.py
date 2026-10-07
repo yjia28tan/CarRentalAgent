@@ -7,8 +7,20 @@ import pytest
 
 from src.agent.context import apply_tool_result, empty_context
 from src.agent.dates import DateParseError, resolve_date, resolve_datetime
-from src.agent.orchestrator import LLM_ERROR_REPLY, MAX_STEPS_REPLY, TIMEOUT_REPLY, build_orchestrator
-from src.agent.tools import TOOLS, Tool, ToolInput, ToolOutcome, execute_tool, tool_specs
+from src.agent.orchestrator import (
+    LLM_ERROR_REPLY,
+    MAX_STEPS_REPLY,
+    TIMEOUT_REPLY,
+    build_orchestrator,
+)
+from src.agent.tools import (
+    TOOLS,
+    Tool,
+    ToolInput,
+    ToolOutcome,
+    execute_tool,
+    tool_specs,
+)
 from src.llm.fake import FakeLLM, call, calls, say
 from src.llm.gateway import LLMError, ToolCall
 from tests.helpers import VANCOUVER, naive
