@@ -25,6 +25,7 @@ class ErrorCode(StrEnum):
     PREVIEW_EXPIRED = "PREVIEW_EXPIRED"
     ACTION_NOT_FOUND = "ACTION_NOT_FOUND"
     ACTION_EXPIRED = "ACTION_EXPIRED"
+    SESSION_NOT_FOUND = "SESSION_NOT_FOUND"
     RATE_LIMITED = "RATE_LIMITED"
     UPSTREAM_TIMEOUT = "UPSTREAM_TIMEOUT"
     UPSTREAM_ERROR = "UPSTREAM_ERROR"
@@ -45,6 +46,7 @@ HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.PREVIEW_EXPIRED: 410,
     ErrorCode.ACTION_NOT_FOUND: 404,
     ErrorCode.ACTION_EXPIRED: 410,
+    ErrorCode.SESSION_NOT_FOUND: 404,
     ErrorCode.RATE_LIMITED: 429,
     ErrorCode.UPSTREAM_TIMEOUT: 504,
     ErrorCode.UPSTREAM_ERROR: 502,
@@ -64,6 +66,7 @@ DEFAULT_MESSAGES: dict[ErrorCode, str] = {
     ErrorCode.PREVIEW_EXPIRED: "This change preview has expired. Please request a new one.",
     ErrorCode.ACTION_NOT_FOUND: "This action was not found.",
     ErrorCode.ACTION_EXPIRED: "This action has expired. Please ask for the change again.",
+    ErrorCode.SESSION_NOT_FOUND: "This chat session was not found or has expired. Please start a new session.",
     ErrorCode.RATE_LIMITED: "Too many requests. Please wait a moment and try again.",
     ErrorCode.UPSTREAM_TIMEOUT: "A backend service took too long to respond. Please try again.",
     ErrorCode.UPSTREAM_ERROR: "A backend service is temporarily unavailable. Please try again.",
@@ -82,11 +85,13 @@ class AppError(Exception):
         *,
         status_code: int | None = None,
         details: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         self.code = code
         self.message = message or DEFAULT_MESSAGES[code]
         self.status_code = status_code or HTTP_STATUS[code]
         self.details = details
+        self.headers = headers
         super().__init__(f"{code}: {self.message}")
 
 
@@ -139,7 +144,8 @@ def install_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(_: Request, exc: AppError) -> JSONResponse:
         logger.info("app_error", error_code=str(exc.code), status=exc.status_code)
-        return error_response(exc.code, exc.message, status_code=exc.status_code, details=exc.details)
+        return error_response(exc.code, exc.message, status_code=exc.status_code, details=exc.details,
+                              headers=exc.headers)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:

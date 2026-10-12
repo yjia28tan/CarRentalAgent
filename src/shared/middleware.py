@@ -37,6 +37,8 @@ class RequestContextMiddleware:
                 break
         request_id = incoming if _VALID_REQUEST_ID.fullmatch(incoming) else new_id("req")
 
+        # Restored afterwards: an in-process nested app (dev server, tests) must not wipe the caller's context.
+        outer_context = structlog.contextvars.get_contextvars()
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
         scope.setdefault("state", {})["request_id"] = request_id
@@ -58,17 +60,18 @@ class RequestContextMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
         except Exception:
-            logger.exception("unhandled_exception", path=scope.get("path"))
+            logger.exception("Unhandled exception", path=scope.get("path"))
             if response_started:
                 raise
             response = error_response(ErrorCode.INTERNAL_ERROR, request_id=request_id)
             await response(scope, receive, send_wrapper)
         finally:
             logger.info(
-                "http_request",
+                "HTTP request handled",
                 method=scope.get("method"),
                 path=scope.get("path"),
                 status=status_code,
                 latency_ms=round((time.perf_counter() - started) * 1000, 1),
             )
             structlog.contextvars.clear_contextvars()
+            structlog.contextvars.bind_contextvars(**outer_context)

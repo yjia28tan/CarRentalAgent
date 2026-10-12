@@ -1,6 +1,6 @@
 # Car Rental AI Agent — Build Specification
 
-> **For the coding agent reading this:** This document is the single source of truth for the project. Build it in the phases listed in §14, run the tests at the end of every phase, and do not move on until they pass. If something in this spec is ambiguous or seems wrong, stop and ask instead of inventing a different design. Do not add infrastructure that is not listed here (no Kafka, no Kubernetes, no LangChain/LangGraph, no extra databases).
+> **For the coding agent reading this:** This document is the single source of truth for the project. Build it in the phases listed in §14, run the tests at the end of every phase, and do not move on until they pass. If something in this spec is ambiguous or seems wrong, stop and ask instead of inventing a different design. Do not add infrastructure that is not listed here (no Kafka, no Kubernetes, no LangChain agents/chains, no extra databases; LangGraph only as the optional orchestrator in §2).
 
 ---
 
@@ -35,6 +35,7 @@ Guiding principles (apply everywhere):
 | Auth | JWT HS256 via `PyJWT`, password hashing via `bcrypt` |
 | Embeddings (mock RAG) | `sentence-transformers/all-MiniLM-L6-v2` (384-dim, runs locally, no API key) |
 | LLM | Provider-agnostic `LLMGateway` interface; one real adapter selected by env (`LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY`) plus a `FakeLLM` for tests |
+| Agent orchestration | Custom async tool-calling loop (default), or the same turn as a LangGraph graph via `AGENT_ORCHESTRATOR=langgraph`; both share tools, validation and fallbacks — see §7.2 |
 | Logging | `structlog`, JSON output, `request_id` on every line |
 | UI | Streamlit |
 | Tests | `pytest`, `pytest-asyncio` |
@@ -758,6 +759,7 @@ Never log secrets, tokens, or passwords. Use `SecretStr` for secret settings.
 - How to reset demo data (re-run the seed with `--anchor-date`).
 - How to run the tests (`pytest`, which works without Docker using in-memory fakes).
 - Design decisions and trade-offs: why identity is server-side; why two-phase writes; why mocks stand in for enterprise services; how this would map to the real enterprise LLM, RAG, and auth platforms.
+  - Why the default orchestrator is framework-free, and how the optional LangGraph orchestrator maps to it.
 - Known limitations and next steps (streaming responses, real payment adjustment, human handoff, evaluation suite).
 
 ---

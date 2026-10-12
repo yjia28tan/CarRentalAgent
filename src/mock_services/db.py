@@ -12,9 +12,9 @@ async def _init_connection(conn: asyncpg.Connection) -> None:
     await conn.set_type_codec("jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
 
 
-async def create_pool() -> asyncpg.Pool:
+async def create_pool(dsn: str | None = None) -> asyncpg.Pool:
     return await asyncpg.create_pool(
-        dsn=get_settings().postgres_dsn.get_secret_value(),
+        dsn=dsn or get_settings().postgres_dsn.get_secret_value(),
         min_size=1,
         max_size=10,
         command_timeout=10,

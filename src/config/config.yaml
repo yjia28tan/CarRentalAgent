@@ -3,6 +3,8 @@
 
 app_env: dev
 log_level: INFO
+# text = readable multi-line logs; json = one JSON object per line (use for log collectors)
+log_format: text
 default_timezone: America/Vancouver
 company_name: Maple Car Rental
 openapi_docs: true
@@ -22,6 +24,9 @@ agent_api_url: http://app:8000
 llm_provider: azure_openai
 llm_timeout_seconds: 30
 llm_max_retries: 2
+
+# custom = framework-free loop (default); langgraph = same tools/validation run as a LangGraph graph
+agent_orchestrator: custom
 
 agent_max_steps: 6
 tool_timeout_seconds: 8

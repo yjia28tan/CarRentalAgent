@@ -12,6 +12,56 @@ from src.shared.middleware import RequestContextMiddleware
 from src.utils.config import Settings, get_settings
 
 
+# ---------- log format ----------
+
+def test_text_log_format():
+    from src.utils.logger import render_text
+
+    out = render_text(None, "info", {
+        "ts": "2026-10-06 15:21:18.479123", "level": "info", "logger": "app_main", "module": "app_main",
+        "lineno": 85, "func_name": "lifespan", "event": "Redis client created", "request_id": None,
+        "host": "redis:6379",
+    })
+    assert out == (
+        "[2026-10-06 15:21:18.479 : INFO]\n"
+        " | app_main: Line 85 -> Function lifespan()\n"
+        " | Redis client created\n"
+        " | host=redis:6379"
+    )
+
+
+def test_text_log_format_puts_request_context_first():
+    from src.utils.logger import render_text
+
+    out = render_text(None, "warning", {
+        "ts": "2026-10-06 15:21:18.479", "level": "warning", "logger": "src.routers.chat", "lineno": 7,
+        "func_name": "send_message", "event": "tool_call", "status": "error", "customer_id": "c1",
+        "request_id": "req_1", "session_id": None,
+    })
+    assert out.splitlines()[0] == "[2026-10-06 15:21:18.479 : WARNING]"
+    assert out.splitlines()[-1] == " | request_id=req_1 customer_id=c1 status=error"
+
+
+def test_json_log_format_keeps_callsite():
+    import io
+    import json
+    import logging
+
+    from src.utils.logger import configure_logging, get_logger
+
+    try:
+        configure_logging("INFO", "json")
+        stream = io.StringIO()
+        logging.getLogger().handlers[0].setStream(stream)
+        get_logger("test.json").info("hello", answer=42)
+        record = json.loads(stream.getvalue().strip().splitlines()[-1])
+        assert record["event"] == "hello" and record["answer"] == 42
+        assert record["func_name"] == "test_json_log_format_keeps_callsite" and record["lineno"] > 0
+        assert record["logger"] == "test.json" and record["ts"].endswith("Z")
+    finally:
+        configure_logging(get_settings().log_level, get_settings().log_format)
+
+
 # ---------- settings ----------
 
 def test_settings_layering_yaml_and_env():
@@ -118,17 +168,22 @@ def _agent_client(*, redis_ok=True, mongo_ok=True, pg_status="ok", seen_headers=
         code = 200 if pg_status == "ok" else 503
         return httpx.Response(code, json={"checks": {"postgres": pg_status}})
 
-    state = app_main.app.state
-    state.redis = SimpleNamespace(
+    from src.deps import Services
+    from src.llm.fake import FakeLLM
+    from src.storage.memory import InMemoryAuditLog, InMemoryHistoryStore
+
+    sessions = SimpleNamespace(
         ping=AsyncMock(return_value=True) if redis_ok else AsyncMock(side_effect=ConnectionError())
     )
-    state.mongo = SimpleNamespace(
-        admin=SimpleNamespace(
-            command=AsyncMock(return_value={"ok": 1}) if mongo_ok else AsyncMock(side_effect=TimeoutError())
-        )
+    services = Services(
+        sessions=sessions,
+        history=InMemoryHistoryStore(),
+        audit=InMemoryAuditLog(),
+        llm=FakeLLM(),
+        http=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://mock"),
+        ping_mongo=AsyncMock(return_value={"ok": 1}) if mongo_ok else AsyncMock(side_effect=TimeoutError()),
     )
-    state.http = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://mock")
-    return TestClient(app_main.app)  # no context manager -> lifespan (real connections) not run
+    return TestClient(app_main.create_app(services))
 
 
 def test_health_all_ok_and_propagates_request_id():

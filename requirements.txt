@@ -13,6 +13,7 @@ bcrypt>=4.1
 python-ulid>=2.7
 tzdata>=2024.1
 openai>=1.40
+langgraph>=1.0
 sentence-transformers>=3.0
 streamlit>=1.38
 pytest>=8.2

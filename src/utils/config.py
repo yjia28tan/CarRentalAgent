@@ -6,6 +6,7 @@ Secrets and connection strings live in secrets.env; non-secret tunables live in 
 """
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import SecretStr, model_validator
 from pydantic_settings import (
@@ -32,6 +33,7 @@ class Settings(BaseSettings):
     # General
     app_env: str = "dev"
     log_level: str = "INFO"
+    log_format: Literal["text", "json"] = "text"
     default_timezone: str = "America/Vancouver"
     company_name: str = "Car Rental Company"
     openapi_docs: bool = True
@@ -61,8 +63,12 @@ class Settings(BaseSettings):
     llm_api_version: str = ""
     llm_timeout_seconds: float = 30
     llm_max_retries: int = 2
+    # Outbound proxy for LLM traffic only (e.g. corporate network); internal calls stay direct.
+    http_proxy: str = ""
+    https_proxy: str = ""
 
     # Agent behaviour
+    agent_orchestrator: Literal["custom", "langgraph"] = "custom"
     agent_max_steps: int = 6
     tool_timeout_seconds: float = 8
     turn_timeout_seconds: float = 45

@@ -1,11 +1,36 @@
+# Secrets: only secrets.env.example is committed
 *.env
-.env*
+.env
+.env.*
+!secrets.env.example
+.streamlit/secrets.toml
 
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# Test / tool caches and reports
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+pytest_out.txt
+
+# Logs
 *.log
 /log
 
+# Local docs, editors and OS files
 /docs
-
-.venv/
-__pycache__/
-.pytest_cache/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
